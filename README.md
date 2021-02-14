@@ -1,11 +1,13 @@
 # Simple python3 webserver with upload
 _Licensed under BSD3 license_ 
 
-_Copyright (c) 2021, Ing. Jaromir Sedlacek_  
+_Copyright (c) 2021, Ing. Jaromir Sedlacek 
 _All rights reserved._
 
+## Download
+###[webserver.py](https://raw.githubusercontent.com/sedlacek-modules/webserver/master/webserver.py)
 
-##Features
+## Features
 
 - Convenient bidirectional file transfer within ssh session.  
     - With open ssh tunnel **no need for additional ssh sessions**.  
@@ -68,7 +70,7 @@ list content of `www` directory (html output only)
 curl "http://127.0.0.1:9999/"
 ```
 
-### Help:
+## Help:
 ```
 usage: webserver.py [-h] [--level {ERROR,INFO,DEBUG}] [--listen LISTEN]
                     [--port PORT]
