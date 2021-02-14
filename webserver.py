@@ -24,7 +24,7 @@ import tarfile
 from io import BytesIO
 from zipfile import ZipFile, ZIP_DEFLATED
 
-VERSION = '1.0'
+VERSION = '1.1'
 
 import http, http.server, os, traceback, logging, socketserver
 from contextlib import suppress, contextmanager
