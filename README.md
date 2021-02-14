@@ -56,12 +56,12 @@ curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb?overwrite"
 ```
 append file to `www/subdir/bbb`
 ```
-date | curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb?append"
+curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb?append"
 ```
 flush after each chunk _(append turn it on)_  
 this allows `tail -f www/subdir/bbb` on server side to work nicely
 ```
-while :; do date; sleep 10; done | curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb?append&flush"
+while :; do date; sleep 10; done | curl --upload-file - "http://127.0.0.1:9999/subdir/bbb?append&flush"
 ```
 list content of `www` directory (html output only)
 ```
