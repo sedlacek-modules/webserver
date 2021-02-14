@@ -21,6 +21,8 @@ Please note
     locks are not file locks, they are implemented only within the server
 """
 
+VERSION = '1.0'
+
 import http.server, os, traceback, logging, socketserver
 from contextlib import suppress, contextmanager
 from urllib.parse import urlparse, parse_qs
@@ -141,7 +143,7 @@ if __name__ == '__main__':
         logging.basicConfig(level=args['level'], format='%(asctime)s:%(levelname)-8s%(name)s::  %(message)s')
         server_address = (args['listen'], int(args['port']))
         root = os.path.abspath(args['root'])
-        logger.info(f'Serving on {args["listen"]}:{args["port"]} from "{root}"')
+        logger.info(f'Serving on {args["listen"]}:{args["port"]} from "{root}", version {VERSION}')
         os.chdir(root)
 
         ThreadingHTTPServer(server_address, MyHTTPRequestHandler).serve_forever()
