@@ -6,30 +6,35 @@ _All rights reserved._
 
 
 ##Features
-- **Not for production use**  
-    - More convenient file transfer within ssh session.  
-    - With open tunnel **no need additional ssh sessions**.  
-    `ssh user@remote.host -R 9999:localhost:999 ...`
-- Only **pure python3** standard modules from distribution
-- Contained only in one file - **easy copy & paste to get it running**
-- **Support streaming** upload from multiple sources
-- Locking (only within server), no timeout, waits indefinitely
-    - **Record locking** when streamed (chunked) upload
-        - Cannot be turned off
-        - Keeps records in order as they came
+
+- Convenient bidirectional file transfer within ssh session.  
+    - With open ssh tunnel **no need for additional ssh sessions**.  
+    `ssh user@remote.host -R 9999:localhost:9999 ...`
+- **Pure Python3**.
+    - Only Python distribution modules in use.
+    - **Python 3.6+** _(f-strings literals)_.
+- One source file - **easy copy & paste to get it up running**.
+- **Support streaming** upload _(chunked encoding)_.
+- Locking.
+    - Only within the server process.
+    - No timeout, waits indefinitely.
+    - File locking.
+        - `http://.../dir/file?nolock` will turn it off.
+    - **Record locking** when streamed upload.
+        - Cannot be turned off.
+        - Multiple sources/connections can append safely to same file.
+        - Keeps record order as they arrive.
             ```
             server1# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
-            ...
+            --------
             server2# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
             ```
-    - Whole file locking, otherwise
-    - Use `http://.../dir/file?nolock` to turn off whole file locking
-- Whole upload is read into memory (caution with large file uploads)
-    - or whole chunk for chunked encoding
-- Tested with Python 3.9.0, works with **Python 3.6+** (f-strings literals)
-- Supports any combination `http://.../dir/file?overwrite,append,flush,nolock`
+- Caution with large files.
+    - Whole upload is read into memory. Or whole chunk.
+- Supports any combination of flags.
+    - `http://.../dir/file?overwrite,append,flush,nolock`
     - `http://.../dir/file?overwrite&append&flush&nolock`  
-      _same behavior, just more difficult to type_
+      _same behavior, more difficult to type `&`_
 
 
 ## Examples
