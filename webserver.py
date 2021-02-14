@@ -150,4 +150,3 @@ if __name__ == '__main__':
         ThreadingHTTPServer(server_address, MyHTTPRequestHandler).serve_forever()
     except KeyboardInterrupt:
         logger.debug('Shutting down ...')
-        pass
