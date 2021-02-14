@@ -21,42 +21,52 @@ Please note
     locks are not file locks, they are implemented only within the server
 """
 
-import http.server
-from contextlib import suppress, nullcontext, contextmanager
+import http.server, os, traceback, logging, socketserver
+from contextlib import suppress, contextmanager
 from urllib.parse import urlparse, parse_qs
-import os.path
-import traceback
 from threading import Lock
 
-import logging
 logger = logging.getLogger(os.path.basename(__file__))
 logger.addHandler(logging.NullHandler())
+
+# workarounds for python 3.6
+
+@contextmanager
+def nullcontext():
+    yield
+
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+
+# end of workarounds for python 3.6
 
 lock = Lock()       # generic lock
 locks = {}          # dict of file locks, key is path
 
+
 @contextmanager
-def manage_lock(fspath):
+def manage_locks(fspath):
     with lock:
-        filelock, counter = locks.get(fspath, (Lock(), 0))
+        filelock, counter = locks.get(fspath, (Lock(), 0))      # we might not have active lock for fspath
         locks[fspath] = (filelock, counter + 1)
     yield
     with lock:
         filelock, counter = locks[fspath]
-        if counter <= 1:
-            del locks[fspath]
+        if counter > 1:
+            locks[fspath] = (filelock, counter - 1)             # still more requests active for same fspath
         else:
-            locks[fspath] = (filelock, counter - 1)
+            del locks[fspath]                                   # we are last fspath lock, so destroy lock object
+
 
 class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
-    def log_message(self, format, *args):
-        logger.debug(f'{self.address_string()} {format%args}')
+    def log_message(self, percent_format, *args):
+        logger.debug(f'{self.address_string()} {percent_format % args}')
 
     def log_error(self, format, *args):
         logger.error(f'{self.address_string()} {format % args}')
 
-    def send_whole_response(self, status, reason, body='', content_type='text/plain'):
+    def send_whole_response(self, status: int, reason, body='', content_type='text/plain'):
         with suppress(Exception):
             body = body.encode()        # get bytes
         self.send_response(status, reason)
@@ -77,21 +87,22 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             # allow use as well ',' as query args separator
             keywords = set([k for keys in parse_qs(parsed.query, keep_blank_values=True) for k in keys.split(',')])
             mode = 'ab' if 'append' in keywords else 'wb'
-            flush = lambda x: x.flush() if 'append' in keywords else lambda x: None
+            flush = lambda x: x.flush() if 'append' in keywords or 'flush' in keywords else lambda x: None
 
-            with manage_lock(fspath):
+            with manage_locks(fspath):
+
                 if 'append' in keywords or 'nolock' in keywords:
-                    filelock = nullcontext()
-                    recordlock, _ = locks[fspath]
+                    filelock, recordlock = nullcontext(), locks[fspath][0]
                 else:
-                    filelock, _ = locks[fspath]
-                    recordlock = nullcontext()
+                    filelock, recordlock = locks[fspath][0], nullcontext()
+
                 with filelock:
                     if os.path.exists(fspath) and not ('overwrite' in keywords or 'append' in keywords):
                         logger.error(f'File "{parsed.path}" already exist.')
                         self.send_whole_response(409, 'File exists', f'File "{parsed.path}" already exists.\nUse "{parsed.path}?overwrite" or "{parsed.path}?append"\n')
                         return
                     os.makedirs(os.path.dirname(fspath), exist_ok=True)
+
                     with open(fspath, mode) as w:
                         if 'content-length' in self.headers:
                             chunk = self.rfile.read(int(self.headers['content-length']))
@@ -108,6 +119,7 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                                 self.rfile.readline()           # chunk ends with empty line
                                 chunk_size = int(self.rfile.readline().strip(), 16)
                 self.send_whole_response(200, 'OK', f'File "{parsed.path}" {"updated" if "append" in self.headers else "uploaded"}.\n')
+
         except Exception as e:
             reason = f'Upload failed for "{self.requestline}"\n' + traceback.format_exc() + '\n'
             self.send_whole_response(500, 'Internal Server Error', reason)
@@ -131,7 +143,8 @@ if __name__ == '__main__':
         root = os.path.abspath(args['root'])
         logger.info(f'Serving on {args["listen"]}:{args["port"]} from "{root}"')
         os.chdir(root)
-        http.server.ThreadingHTTPServer(server_address, MyHTTPRequestHandler).serve_forever()
+
+        ThreadingHTTPServer(server_address, MyHTTPRequestHandler).serve_forever()
     except KeyboardInterrupt:
         logger.debug('Shutting down ...')
         pass

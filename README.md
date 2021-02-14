@@ -4,28 +4,29 @@ _Licensed under BSD3 license_
 _Copyright (c) 2021, Ing. Jaromir Sedlacek_  
 _All rights reserved._
 
+
 ##Features
 - **Not for production use**  
-    &nbsp;&nbsp;&nbsp;&nbsp;_I use it just for more convenient file transfer within the ssh session with open tunnel (without need for additional ssh sessions)_  
-    &nbsp;&nbsp;&nbsp;&nbsp;`ssh user@remote.host -R 9999:localhost:999 ...`
-- Only pure python3 standard modules from distribution, no need to install anything else
+    - More convenient file transfer within ssh session.  
+    - With open tunnel **no need additional ssh sessions**.  
+    `ssh user@remote.host -R 9999:localhost:999 ...`
+- Only **pure python3** standard modules from distribution
 - Contained only in one file - **easy copy & paste to get it running**
-- Support streaming upload from multiple sources
+- **Support streaming** upload from multiple sources
 - Locking (only within server), no timeout, waits indefinitely
-    - Record locking when streamed (chunked) upload
-        ```
-        server1# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
-        ```
-        ```
-        server2# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
-        ```
-        - Should keep records in order as they came
+    - **Record locking** when streamed (chunked) upload
         - Cannot be turned off
+        - Keeps records in order as they came
+            ```
+            server1# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
+            ...
+            server2# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
+            ```
     - Whole file locking, otherwise
     - Use `http://.../dir/file?nolock` to turn off whole file locking
 - Whole upload is read into memory (caution with large file uploads)
     - or whole chunk for chunked encoding
-- Tested with Python 3.9.0, but should work with any Python 3.6+ (f-strings literals)
+- Tested with Python 3.9.0, works with **Python 3.6+** (f-strings literals)
 - Supports any combination `http://.../dir/file?overwrite,append,flush,nolock`
     - `http://.../dir/file?overwrite&append&flush&nolock`  
       _same behavior, just more difficult to type_
