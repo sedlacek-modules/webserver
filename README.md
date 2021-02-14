@@ -1,7 +1,7 @@
 # Simple python3 webserver with upload
 _Licensed under BSD3 license_ 
 
-_Copyright (c) 2021, Ing. Jaromir Sedlacek 
+_Copyright (c) 2021, Ing. Jaromir Sedlacek_
 _All rights reserved._
 
 ## Download
