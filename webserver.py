@@ -63,10 +63,10 @@ def manage_locks(fspath):
 class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, percent_format, *args):
-        logger.debug(f'{self.address_string()} {percent_format % args}')
+        logger.debug(f'{self.client_address[0]}:{self.client_address[1]:<5d} {percent_format % args}')
 
     def log_error(self, format, *args):
-        logger.error(f'{self.address_string()} {format % args}')
+        logger.error(f'{self.client_address[0]}:{self.client_address[1]:<5d} {format % args}')
 
     def send_whole_response(self, status: int, reason, body='', content_type='text/plain'):
         with suppress(Exception):
@@ -140,7 +140,7 @@ if __name__ == '__main__':
 
         args = vars(parser.parse_args())
 
-        logging.basicConfig(level=args['level'], format='%(asctime)s:%(levelname)-8s%(name)s::  %(message)s')
+        logging.basicConfig(level=args['level'], format='%(asctime)s:%(levelname)-8s %(message)s')
         server_address = (args['listen'], int(args['port']))
         root = os.path.abspath(args['root'])
         logger.info(f'Serving on {args["listen"]}:{args["port"]} from "{root}", version {VERSION}')
