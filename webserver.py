@@ -103,7 +103,7 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         if sum(['plain' in keywords, 'tgz' in keywords, 'zip' in keywords]) > 1:
             return self.send_whole_response(400, body=f'plain, tgz, zip are mutually exclusive.\n')
         if 'plain' in parsed.query:
-            return self.send_whole_response(200, body='\n'.join([f'{f}/' if os.path.isdir(f) else f for f in os.listdir(fspath)]))
+            return self.send_whole_response(200, body='\n'.join([f'{f}/' if os.path.isdir(f) else f for f in os.listdir(fspath)]) + '\n')
         elif 'tgz' in parsed.query:
             return self.send_whole_response(200, body=self.tgz_directory(fspath, BytesIO()).getvalue(),
                 headers={'content-type': 'application/gzip', 'content-disposition': 'attachment; filename="unknown.tgz"'})
