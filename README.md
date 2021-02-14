@@ -33,6 +33,11 @@ _All rights reserved._
             ```
 - Caution with large files.
     - Whole upload is read into memory. Or whole chunk.
+- Compress directory
+    - gzipped tar `http://.../dir/?tgz`
+    - zipped `http://.../dir/?zip`
+- Directory listing
+    - html (default), plain text `http://.../dir/?plain`
 - Supports any combination of flags.
     - `http://.../dir/file?overwrite,append,flush,nolock`
     - `http://.../dir/file?overwrite&append&flush&nolock`  
@@ -65,9 +70,13 @@ this allows `tail -f www/subdir/bbb` on server side to work nicely
 ```
 while :; do date; sleep 10; done | curl --upload-file - "http://127.0.0.1:9999/subdir/bbb?append&flush"
 ```
-list content of `www` directory (html output only)
+list content of `www` directory
 ```
 curl "http://127.0.0.1:9999/"
+```
+list content of `www` directory in plaintext
+```
+curl "http://127.0.0.1:9999/?plain"
 ```
 
 ## Help:

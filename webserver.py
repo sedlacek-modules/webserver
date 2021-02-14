@@ -20,6 +20,9 @@ Please note
     append always locks before writing chunk
     locks are not file locks, they are implemented only within the server
 """
+import tarfile
+from io import BytesIO
+from zipfile import ZipFile, ZIP_DEFLATED
 
 VERSION = '1.0'
 
@@ -68,8 +71,20 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def log_error(self, format, *args):
         logger.error(f'{self.client_address[0]}:{self.client_address[1]:<5d} {format % args}')
 
+    def tgz_directory(self, path, fileio):
+        with tarfile.open(fileobj=fileio, mode='w:gz') as tar:
+            tar.add(path, arcname='.')
+        return fileio
+
+    def zip_directory(self, path, fileio):
+        with ZipFile(fileio, 'w', ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(path):
+                for file in files:
+                    zf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), path))
+        return fileio
+
     def send_whole_response(self, status: int, *, reason=None, body='', headers=None):
-        headers = {k.lover(): v for k, v in headers.items()} if headers else {}
+        headers = {k.lower(): v for k, v in headers.items()} if headers else {}
         with suppress(Exception):
             body = body.encode()            # make sure we have bytes
         headers.update({'content-length': str(len(body)), 'content-type': headers.get('content-type', 'text/plain')})
@@ -79,11 +94,29 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
         self.wfile.flush()
 
+    def do_GET(self):
+        fspath = self.translate_path(self.path)
+        parsed = urlparse(self.path)
+        keywords = set([k for keys in parse_qs(parsed.query, keep_blank_values=True) for k in keys.split(',')])
+        if not os.path.isdir(fspath):
+            return super().do_GET()             # we do not have to do anything
+        if sum(['plain' in keywords, 'tgz' in keywords, 'zip' in keywords]) > 1:
+            return self.send_whole_response(400, body=f'plain, tgz, zip are mutually exclusive.\n')
+        if 'plain' in parsed.query:
+            return self.send_whole_response(200, body='\n'.join([f'{f}/' if os.path.isdir(f) else f for f in os.listdir(fspath)]))
+        elif 'tgz' in parsed.query:
+            return self.send_whole_response(200, body=self.tgz_directory(fspath, BytesIO()).getvalue(),
+                headers={'content-type': 'application/gzip', 'content-disposition': 'attachment; filename="unknown.tgz"'})
+        elif 'zip' in parsed.query:
+            return self.send_whole_response(200, body=self.zip_directory(fspath, BytesIO()).getvalue(),
+                headers={'content-type': 'application/zip', 'content-disposition': f'attachment; filename="unknown.zip"'})
+        else:
+            return super().do_GET()
+
     def do_PUT(self):
         try:
             if not ('content-length' in self.headers or 'chunked' in self.headers.get("transfer-encoding", "")):
-                self.send_whole_response(400, body='No "Content-Length" header nor chunked encoding.\n')
-                return
+                return self.send_whole_response(400, body='No "Content-Length" header nor chunked encoding.\n')
 
             fspath = self.translate_path(self.path)
             parsed = urlparse(self.path)
@@ -102,8 +135,7 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 with filelock:
                     if os.path.exists(fspath) and not ('overwrite' in keywords or 'append' in keywords):
                         logger.error(f'File "{parsed.path}" already exist.')
-                        self.send_whole_response(409, reason='File exists', body=f'File "{parsed.path}" already exists.\nUse "{parsed.path}?overwrite" or "{parsed.path}?append"\n')
-                        return
+                        return self.send_whole_response(409, reason='File exists', body=f'File "{parsed.path}" already exists.\nUse "{parsed.path}?overwrite" or "{parsed.path}?append"\n')
                     os.makedirs(os.path.dirname(fspath), exist_ok=True)
 
                     with open(fspath, mode) as w:
@@ -125,8 +157,8 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             reason = f'Upload failed for "{self.requestline}"\n' + traceback.format_exc() + '\n'
-            self.send_whole_response(500, body=reason)
             [logger.error(s) for s in reason.splitlines()]
+            self.send_whole_response(500, body=reason)
 
 
 if __name__ == '__main__':
