@@ -23,7 +23,7 @@ Please note
 
 VERSION = '1.0'
 
-import http.server, os, traceback, logging, socketserver
+import http, http.server, os, traceback, logging, socketserver
 from contextlib import suppress, contextmanager
 from urllib.parse import urlparse, parse_qs
 from threading import Lock
@@ -68,12 +68,13 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def log_error(self, format, *args):
         logger.error(f'{self.client_address[0]}:{self.client_address[1]:<5d} {format % args}')
 
-    def send_whole_response(self, status: int, reason, body='', content_type='text/plain'):
+    def send_whole_response(self, status: int, *, reason=None, body='', headers=None):
+        headers = {k.lover(): v for k, v in headers.items()} if headers else {}
         with suppress(Exception):
-            body = body.encode()        # get bytes
-        self.send_response(status, reason)
-        self.send_header('Content-Type', content_type)
-        self.send_header('Content-Length', str(len(body)))
+            body = body.encode()            # make sure we have bytes
+        headers.update({'content-length': str(len(body)), 'content-type': headers.get('content-type', 'text/plain')})
+        self.send_response(status, reason or http.HTTPStatus(status).name)
+        [self.send_header(h, str(v)) for h, v in headers.items()]
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
@@ -81,7 +82,7 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_PUT(self):
         try:
             if not ('content-length' in self.headers or 'chunked' in self.headers.get("transfer-encoding", "")):
-                self.send_whole_response(400, 'Bad request', 'No "Content-Length" header nor chunked encoding.\n')
+                self.send_whole_response(400, body='No "Content-Length" header nor chunked encoding.\n')
                 return
 
             fspath = self.translate_path(self.path)
@@ -101,7 +102,7 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 with filelock:
                     if os.path.exists(fspath) and not ('overwrite' in keywords or 'append' in keywords):
                         logger.error(f'File "{parsed.path}" already exist.')
-                        self.send_whole_response(409, 'File exists', f'File "{parsed.path}" already exists.\nUse "{parsed.path}?overwrite" or "{parsed.path}?append"\n')
+                        self.send_whole_response(409, reason='File exists', body=f'File "{parsed.path}" already exists.\nUse "{parsed.path}?overwrite" or "{parsed.path}?append"\n')
                         return
                     os.makedirs(os.path.dirname(fspath), exist_ok=True)
 
@@ -120,11 +121,11 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                                     flush(w)
                                 self.rfile.readline()           # chunk ends with empty line
                                 chunk_size = int(self.rfile.readline().strip(), 16)
-                self.send_whole_response(200, 'OK', f'File "{parsed.path}" {"updated" if "append" in self.headers else "uploaded"}.\n')
+                self.send_whole_response(200, body=f'File "{parsed.path}" {"updated" if "append" in self.headers else "uploaded"}.\n')
 
         except Exception as e:
             reason = f'Upload failed for "{self.requestline}"\n' + traceback.format_exc() + '\n'
-            self.send_whole_response(500, 'Internal Server Error', reason)
+            self.send_whole_response(500, body=reason)
             [logger.error(s) for s in reason.splitlines()]
 
 
