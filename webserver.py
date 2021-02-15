@@ -1,48 +1,31 @@
 #! /usr/bin/env python3
 """
 Very simple webserver with upload functionality (PUT)
-Licensed under BSD3 license, please see LICENSE file
 
 Copyright (c) 2021, Ing. Jaromir Sedlacek
 All rights reserved.
 
-Examples (bash syntax):
-curl http://localhost:9999/dir/subdir/file --upload-file /etc/passwd
-curl http://localhost:9999/dir/subdir/file?overwrite --upload-file /etc/passwd
-curl http://localhost:9999/dir/subdir/file?append --upload-file /etc/passwd
-while :; do date; sleep 10; done | curl --upload-file - http://localhost:9999/dir/subdir/file?append
-
-Additionally following query args can ve used, both syntax invoke same behaviour
-curl http://localhost:9999/dir/subdir/file?append,overwrite,nolock,flush
-curl http://localhost:9999/dir/subdir/file?append?overwrite?nolock?flush
-
-Please note
-    append always locks before writing chunk
-    locks are not file locks, they are implemented only within the server
+LICENSE: BSD3, https://github.com/sedlacek-modules/webserver/blob/master/LICENSE
+README: https://github.com/sedlacek-modules/webserver/blob/master/README.md
 """
-import tarfile
-from io import BytesIO
-from zipfile import ZipFile, ZIP_DEFLATED
 
-VERSION = '1.1'
+VERSION = '1.2'
 
 import http, http.server, os, traceback, logging, socketserver
 from contextlib import suppress, contextmanager
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote_plus
 from threading import Lock
 
 logger = logging.getLogger(os.path.basename(__file__))
 logger.addHandler(logging.NullHandler())
 
 # workarounds for python 3.6
-
 @contextmanager
 def nullcontext():
     yield
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
-
 # end of workarounds for python 3.6
 
 lock = Lock()       # generic lock
@@ -71,18 +54,6 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def log_error(self, format, *args):
         logger.error(f'{self.client_address[0]}:{self.client_address[1]:<5d} {format % args}')
 
-    def tgz_directory(self, path, fileio):
-        with tarfile.open(fileobj=fileio, mode='w:gz') as tar:
-            tar.add(path, arcname='.')
-        return fileio
-
-    def zip_directory(self, path, fileio):
-        with ZipFile(fileio, 'w', ZIP_DEFLATED) as zf:
-            for root, dirs, files in os.walk(path):
-                for file in files:
-                    zf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), path))
-        return fileio
-
     def send_whole_response(self, status: int, *, reason=None, body='', headers=None):
         headers = {k.lower(): v for k, v in headers.items()} if headers else {}
         with suppress(Exception):
@@ -95,68 +66,44 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.flush()
 
     def do_GET(self):
+        user_agent = self.headers.get('user-agent', '').lower()
         fspath = self.translate_path(self.path)
-        parsed = urlparse(self.path)
-        keywords = set([k for keys in parse_qs(parsed.query, keep_blank_values=True) for k in keys.split(',')])
-        if not os.path.isdir(fspath):
-            return super().do_GET()             # we do not have to do anything
-        if sum(['plain' in keywords, 'tgz' in keywords, 'zip' in keywords]) > 1:
-            return self.send_whole_response(400, body=f'plain, tgz, zip are mutually exclusive.\n')
-        if 'plain' in parsed.query:
+        if os.path.isdir(fspath) and (user_agent.startswith('curl') or user_agent.startswith('wget')):  # text/plain
             return self.send_whole_response(200, body='\n'.join([f'{f}/' if os.path.isdir(f) else f for f in os.listdir(fspath)]) + '\n')
-        elif 'tgz' in parsed.query:
-            return self.send_whole_response(200, body=self.tgz_directory(fspath, BytesIO()).getvalue(),
-                headers={'content-type': 'application/gzip', 'content-disposition': 'attachment; filename="unknown.tgz"'})
-        elif 'zip' in parsed.query:
-            return self.send_whole_response(200, body=self.zip_directory(fspath, BytesIO()).getvalue(),
-                headers={'content-type': 'application/zip', 'content-disposition': f'attachment; filename="unknown.zip"'})
         else:
             return super().do_GET()
 
     def do_PUT(self):
         try:
-            if not ('content-length' in self.headers or 'chunked' in self.headers.get("transfer-encoding", "")):
-                return self.send_whole_response(400, body='No "Content-Length" header nor chunked encoding.\n')
-
-            fspath = self.translate_path(self.path)
+            chunked = 'chunked' in self.headers.get('transfer-encoding', '')
             parsed = urlparse(self.path)
-            # allow use as well ',' as query args separator
-            keywords = set([k for keys in parse_qs(parsed.query, keep_blank_values=True) for k in keys.split(',')])
-            mode = 'ab' if 'append' in keywords else 'wb'
-            flush = lambda x: x.flush() if 'append' in keywords or 'flush' in keywords else lambda x: None
+            fspath = self.translate_path(self.path)
+            action = 'created' if not os.path.exists(fspath) else 'updated' if chunked else 'replaced'
+
+            if (not 'content-length' in self.headers and not chunked) or ('content-length' in self.headers and chunked):
+                return self.send_whole_response(400, body='Invalid combination of "Content-Length" and chunked encoding.\n')
 
             with manage_locks(fspath):
-
-                if 'append' in keywords or 'nolock' in keywords:
-                    filelock, recordlock = nullcontext(), locks[fspath][0]
-                else:
-                    filelock, recordlock = locks[fspath][0], nullcontext()
-
+                recordlock = locks[fspath][0] if chunked else nullcontext()
+                filelock = locks[fspath][0] if not chunked else nullcontext()
                 with filelock:
-                    if os.path.exists(fspath) and not ('overwrite' in keywords or 'append' in keywords):
-                        logger.error(f'File "{parsed.path}" already exist.')
-                        return self.send_whole_response(409, reason='File exists', body=f'File "{parsed.path}" already exists.\nUse "{parsed.path}?overwrite" or "{parsed.path}?append"\n')
                     os.makedirs(os.path.dirname(fspath), exist_ok=True)
-
-                    with open(fspath, mode) as w:
-                        if 'content-length' in self.headers:
-                            chunk = self.rfile.read(int(self.headers['content-length']))
-                            with recordlock:
-                                w.write(chunk)
-                                flush(w)
-                        else:
+                    with open(fspath, 'ab' if chunked else 'wb') as w:
+                        if chunked:
                             chunk_size = int(self.rfile.readline().strip(), 16)
                             while chunk_size > 0:
                                 chunk = self.rfile.read(chunk_size)
                                 with recordlock:
                                     w.write(chunk)
-                                    flush(w)
-                                self.rfile.readline()           # chunk ends with empty line
+                                    w.flush()
+                                self.rfile.readline()  # chunk ends with empty line
                                 chunk_size = int(self.rfile.readline().strip(), 16)
-                self.send_whole_response(200, body=f'File "{parsed.path}" {"updated" if "append" in self.headers else "uploaded"}.\n')
+                        else:
+                            w.write(self.rfile.read(int(self.headers['content-length'])))
+                return self.send_whole_response(200, body=f'File "{unquote_plus(parsed.path)}" {action}.\n')
 
         except Exception as e:
-            reason = f'Upload failed for "{self.requestline}"\n' + traceback.format_exc() + '\n'
+            reason = f'Failed for "{self.requestline}"\n' + traceback.format_exc() + '\n'
             [logger.error(s) for s in reason.splitlines()]
             self.send_whole_response(500, body=reason)
 

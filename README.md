@@ -15,33 +15,24 @@ _All rights reserved._
 - **Pure Python3**.
     - Only Python distribution modules in use.
     - **Python 3.6+** _(f-strings literals)_.
-- One source file - **easy copy & paste to get it up running**.
-- **Support streaming** upload _(chunked encoding)_.
+    - One source file - **easy copy & paste to get it up running**.
+- **Supports streaming** upload _(chunked encoding)_.
+    - Forces append to file mode
 - Locking.
     - Only within the server process.
-    - No timeout, waits indefinitely.
-    - File locking.
-        - `http://.../dir/file?nolock` will turn it off.
-    - **Record locking** when streamed upload.
-        - Cannot be turned off.
+    - No timeout, waits indefinitely
+    - **Record only locking** when streamed upload.
         - Multiple sources/connections can append safely to same file.
         - Keeps record order as they arrive.
             ```
-            server1# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
+            server1# tail -f /var/log/nginx/acces.log | curl --upload-file - http://localhost:9999/colected.log
             --------
-            server2# tail -f /var/log/nginx/acces.log | curl --upload-file - "http://localhost:9999/colected.log?append"
+            server2# tail -f /var/log/nginx/acces.log | curl --upload-file - http://localhost:9999/colected.log
             ```
 - Caution with large files.
     - Whole upload is read into memory. Or whole chunk.
-- Compress directory
-    - gzipped tar `http://.../dir/?tgz`
-    - zipped `http://.../dir/?zip`
-- Directory listing
-    - html (default), plain text `http://.../dir/?plain`
-- Supports any combination of flags.
-    - `http://.../dir/file?overwrite,append,flush,nolock`
-    - `http://.../dir/file?overwrite&append&flush&nolock`  
-      _same behavior, more difficult to type `&`_
+- Directory listing.
+    - text/plain when `User-Agent` start with `curl` or `wget`
 
 
 ## Examples
@@ -51,32 +42,27 @@ python3 webserver.py www
 ```
 download file `www/aaa`
 ```
-curl "http://127.0.0.1:9999/aaa"
+curl http://127.0.0.1:9999/aaa
 ```
 upload file to `www/subdir/bbb`
 ```
-curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb"
-```
-ensure overwrite of `www/subdir/bbb`
-```
-curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb?overwrite"
+curl --upload-file /etc/passwd http://127.0.0.1:9999/subdir/bbb
 ```
 append file to `www/subdir/bbb`
 ```
-curl --upload-file /etc/passwd "http://127.0.0.1:9999/subdir/bbb?append"
+curl -H 'Transfer-Encoding: chunked' --upload-file /etc/passwd http://127.0.0.1:9999/subdir/bbb
 ```
-flush after each chunk _(append turn it on)_  
-this allows `tail -f www/subdir/bbb` on server side to work nicely
+alternative for appending file to `www/subdir/bbb`
 ```
-while :; do date; sleep 10; done | curl --upload-file - "http://127.0.0.1:9999/subdir/bbb?append&flush"
+cat /etc/passwd | curl --upload-file - http://127.0.0.1:9999/subdir/bbb
+```
+stream updates
+```
+tail -f /var/log/syslog | curl --upload-file - http://127.0.0.1:9999/subdir/bbb
 ```
 list content of `www` directory
 ```
-curl "http://127.0.0.1:9999/"
-```
-list content of `www` directory in plaintext
-```
-curl "http://127.0.0.1:9999/?plain"
+curl http://127.0.0.1:9999/
 ```
 
 ## Help:
