@@ -30,7 +30,7 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 lock = Lock()       # generic lock
 locks = {}          # dict of file locks, key is path
-
+chunk_size = 4*1024*1024
 
 @contextmanager
 def manage_locks(fspath):
@@ -74,6 +74,7 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return super().do_GET()
 
     def do_PUT(self):
+        global chunk_size
         try:
             chunked = 'chunked' in self.headers.get('transfer-encoding', '')
             parsed = urlparse(self.path)
@@ -99,7 +100,11 @@ class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                                 self.rfile.readline()  # chunk ends with empty line
                                 chunk_size = int(self.rfile.readline().strip(), 16)
                         else:
-                            w.write(self.rfile.read(int(self.headers['content-length'])))
+                            content_length = int(self.headers['content-length'])
+                            while content_length > 0 and (chunk := self.rfile.read(min(chunk_size, content_length))):
+                                w.write(chunk)
+                                content_length -= len(chunk)
+
                 return self.send_whole_response(200, body=f'File "{unquote_plus(parsed.path)}" {action}.\n')
 
         except Exception as e:
@@ -116,9 +121,11 @@ if __name__ == '__main__':
         parser.add_argument('--level', required=False, choices=('ERROR', 'INFO', 'DEBUG'), default='INFO', help='Debug level')
         parser.add_argument('--listen', required=False, default='127.0.0.1', help='Listen address')
         parser.add_argument('--port', required=False, type=int, default=9999, help='Listen port')
+        parser.add_argument('--chunk', required=False, type=int, default=4*1024*1024, help='Chunk size [Bytes] for PUT requests')
         parser.add_argument('root', nargs='?', default='.')
 
         args = vars(parser.parse_args())
+        chunk_size = args['chunk']
 
         logging.basicConfig(level=args['level'], format='%(asctime)s:%(levelname)-8s %(message)s')
         server_address = (args['listen'], int(args['port']))
